@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PACKAGE_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+readonly PACKAGE_DIR
+readonly VERSION_FILE="$PACKAGE_DIR/VERSION"
+readonly DATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/lsky-upload"
+readonly BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
+readonly CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/lsky-upload"
+
+die() {
+  printf '%s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+validate_version() {
+  [[ "$1" =~ ^0\.[0-9]+\.[0-9]+$|^[1-9][0-9]*\.[0-9]+\.[0-9]+$ ]] || die "无效 SemVer 版本：$1" 2
+}
+
+main() {
+  [[ $# -eq 0 ]] || die 'install 不接受参数' 2
+  [[ -f "$VERSION_FILE" ]] || die "缺少 VERSION 文件" 2
+  local version
+  version=$(<"$VERSION_FILE")
+  version=${version%$'\r'}
+  validate_version "$version"
+  for dependency in bash curl jq; do
+    command -v "$dependency" >/dev/null 2>&1 || die "缺少依赖：$dependency" 2
+  done
+  [[ -x "$PACKAGE_DIR/bin/lsky-upload" ]] || die "缺少可执行客户端" 2
+
+  local versions_dir="$DATA_ROOT/versions" version_dir tmp_dir current_link command_link link_tmp
+  versions_dir="$DATA_ROOT/versions"
+  version_dir="$versions_dir/$version"
+  current_link="$DATA_ROOT/current"
+  command_link="$BIN_DIR/lsky-upload"
+  mkdir -p "$versions_dir" "$BIN_DIR" "$CONFIG_DIR"
+  chmod 0700 "$DATA_ROOT" "$versions_dir" "$CONFIG_DIR"
+  [[ ! -e "$version_dir" && ! -L "$version_dir" ]] || die "版本已安装：$version" 2
+
+  tmp_dir=$(mktemp -d "$versions_dir/.install.XXXXXX")
+  trap 'rm -rf -- "$tmp_dir"' EXIT
+  install -d -m 0755 "$tmp_dir/bin"
+  install -m 0755 "$PACKAGE_DIR/bin/lsky-upload" "$tmp_dir/bin/lsky-upload"
+  install -m 0644 "$PACKAGE_DIR/config.env.example" "$tmp_dir/config.env.example"
+  install -m 0644 "$PACKAGE_DIR/VERSION" "$tmp_dir/VERSION"
+  install -m 0644 "$PACKAGE_DIR/LICENSE" "$tmp_dir/LICENSE"
+  install -m 0644 "$PACKAGE_DIR/README.md" "$tmp_dir/README.md"
+  mv -- "$tmp_dir" "$version_dir"
+  trap - EXIT
+
+  link_tmp="$DATA_ROOT/.current.$$"
+  ln -s -- "$version_dir" "$link_tmp"
+  mv -Tf -- "$link_tmp" "$current_link"
+  link_tmp="$BIN_DIR/.lsky-upload.$$"
+  ln -s -- "$current_link/bin/lsky-upload" "$link_tmp"
+  mv -Tf -- "$link_tmp" "$command_link"
+
+  if [[ ! -e "$CONFIG_DIR/config.env" ]]; then
+    install -m 0600 "$PACKAGE_DIR/config.env.example" "$CONFIG_DIR/config.env.example"
+  fi
+  printf '已安装 lsky-upload %s\n' "$version"
+  printf '命令：%s\n' "$command_link"
+  [[ ":${PATH}:" == *":$BIN_DIR:"* ]] || printf '提示：请将 %s 加入 PATH。\n' "$BIN_DIR" >&2
+  printf '配置：%s/config.env\n' "$CONFIG_DIR"
+}
+
+main "$@"

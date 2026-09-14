@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly DATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/lsky-upload"
+readonly BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
+readonly CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/lsky-upload"
+readonly CURRENT_LINK="$DATA_ROOT/current"
+readonly COMMAND_LINK="$BIN_DIR/lsky-upload"
+
+main() {
+  if [[ -L "$COMMAND_LINK" ]] && [[ "$(readlink -f -- "$COMMAND_LINK")" == "$CURRENT_LINK/bin/lsky-upload" ]]; then
+    rm -f -- "$COMMAND_LINK"
+  fi
+  rm -f -- "$CURRENT_LINK"
+  if [[ -d "$DATA_ROOT/versions" ]]; then
+    rm -rf -- "$DATA_ROOT/versions"
+  fi
+  rm -f -- "$CONFIG_DIR/config.env.example"
+  rmdir --ignore-fail-on-non-empty "$CONFIG_DIR" 2>/dev/null || true
+  rmdir --ignore-fail-on-non-empty "$DATA_ROOT" 2>/dev/null || true
+  printf '已卸载 lsky-upload；用户配置和本地服务数据未删除。\n'
+}
+
+main "$@"

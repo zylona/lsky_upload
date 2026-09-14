@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-P3：真实本地 Lsky 上传 E2E 已完成，下一阶段为 P4。
+P4：Release 构建、安装、升级和卸载验收已完成。
 
 ## 已完成
 
@@ -25,7 +25,6 @@ P3：真实本地 Lsky 上传 E2E 已完成，下一阶段为 P4。
 
 - 第三方镜像存在 SQLite 权限和 `public/i` 软链接行为偏差，运行时验收已通过权限收敛和公开链接修复处理；
 - E2E 测试 fixture 使用 Base64 源文件在临时目录还原为真实 PNG，不把二进制测试数据写入源码补丁；
-- P4 的 Release 构建和安装器尚未实现；
 
 ## 风险与前置条件
 
@@ -63,3 +62,15 @@ P3：真实本地 Lsky 上传 E2E 已完成，下一阶段为 P4。
 - 服务停止：非零失败；
 - 容器停止并重建后，历史图片 URL 仍可访问；
 - E2E 使用的临时管理员密码和 Token 配置已在测试后删除。
+
+## P4 验证记录
+
+- `scripts/build_release.sh`：通过 Git 跟踪文件组装 `lsky-upload-v0.1.0-linux.tar.gz`；
+- Release 内容审计：仅包含客户端、安装/卸载脚本、配置模板、VERSION、LICENSE 和 README；
+- 敏感信息审计：通过，未包含用户配置、Token、管理员密码、服务数据或测试目录；
+- `sha256sum -c`：通过；
+- 临时干净 HOME 安装 0.1.0：通过；
+- 临时干净 HOME 升级至 0.1.1：通过，已有用户配置内容未改变；
+- 临时干净 HOME 卸载：通过，用户配置仍保留，客户端命令链接已移除；
+- CI 门禁已加入 `.github/workflows/ci.yml`，覆盖 ShellCheck、mock 测试、Compose 校验、Release 构建和 SHA256。
+- CI 已增加 `v*.*.*` tag 触发、`VERSION` 一致性校验、GitHub Release 创建和 tar.gz/SHA256 附件上传；尚未在真实远程 tag 上执行发布。
