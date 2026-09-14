@@ -1,0 +1,18 @@
+.local/
+dist/
+build/
+*.log
+.DS_Store
+
+# 本地用户配置和测试数据
+config.env
+config.env.*
+!config.env.example
+server/data/
+server/.env
+tests/tmp/
+
+# Python 仅在未来确实引入时使用
+.venv/
+__pycache__/
+*.py[cod]

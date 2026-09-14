@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly VERSION="0.1.0"
+readonly DEFAULT_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/lsky-upload/config.env"
+
+usage() {
+  cat <<'EOF'
+用法：
+  lsky-upload IMAGE [IMAGE ...]
+  lsky-upload --config PATH IMAGE [IMAGE ...]
+  lsky-upload --version
+  lsky-upload --help
+
+成功时只在标准输出逐行输出图片 URL。
+EOF
+}
+
+die() {
+  printf '%s\n' "$1" >&2
+  exit "${2:-2}"
+}
+
+is_loopback_host() {
+  case "$1" in
+    localhost|127.0.0.1|::1|\[::1\]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+validate_url() {
+  local value=$1 context=$2 scheme authority host
+  if [[ ! "$value" =~ ^(https?)://([^/?#]+)(/[^?#]*)?(\?[^#]*)?(#.*)?$ ]]; then
+    die "${context}不是有效的 HTTP(S) URL" 2
+  fi
+  scheme=${BASH_REMATCH[1]}
+  authority=${BASH_REMATCH[2]}
+  [[ "$authority" != *@* ]] || die "${context}不能包含 URL 用户信息" 2
+  host=$authority
+  if [[ "$host" == \[*\]* ]]; then
+    host=${host%%\]*}
+    host=${host#\[}
+  else
+    host=${host%%:*}
+  fi
+  [[ -n "$host" ]] || die "${context}缺少主机名" 2
+  if [[ "$scheme" == http && "$LSKY_ALLOW_INSECURE_HTTP" != true ]] && ! is_loopback_host "$host"; then
+    die "${context}使用 HTTP；仅允许 loopback，或在用户配置中设置 LSKY_ALLOW_INSECURE_HTTP=true" 2
+  fi
+}
+
+read_config() {
+  local config_file=$1 line key value mode
+  [[ -f "$config_file" && -r "$config_file" ]] || die "图床上传配置不存在或不可读：$config_file" 2
+  [[ ! -L "$config_file" ]] || die "图床上传配置不能是符号链接：$config_file" 2
+  mode=$(stat -c '%a' "$config_file")
+  (( ( 0$mode & 077 ) == 0 )) || die "图床上传配置权限过宽（需要不宽于 0600）：$config_file" 2
+
+  LSKY_URL=''
+  LSKY_TOKEN=''
+  LSKY_ALLOW_INSECURE_HTTP=false
+  declare -A seen=()
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line=${line%$'\r'}
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" == *=* ]] || die "图床上传配置格式无效" 2
+    key=${line%%=*}
+    value=${line#*=}
+    [[ "$key" =~ ^LSKY_(URL|TOKEN|ALLOW_INSECURE_HTTP)$ ]] || die "图床上传配置含未知字段：$key" 2
+    [[ -z "${seen[$key]+yes}" ]] || die "图床上传配置含重复字段：$key" 2
+    seen[$key]=1
+    case "$key" in
+      LSKY_URL) LSKY_URL=$value ;;
+      LSKY_TOKEN) LSKY_TOKEN=$value ;;
+      LSKY_ALLOW_INSECURE_HTTP)
+        [[ "$value" == true || "$value" == false ]] || die "LSKY_ALLOW_INSECURE_HTTP 必须是 true 或 false" 2
+        LSKY_ALLOW_INSECURE_HTTP=$value
+        ;;
+    esac
+  done < "$config_file"
+  [[ -n "$LSKY_URL" ]] || die "图床上传地址未配置" 2
+  [[ -n "$LSKY_TOKEN" ]] || die "图床上传 Token 未配置" 2
+  validate_url "$LSKY_URL" "图床上传地址"
+}
+
+curl_config_escape() {
+  local value=$1
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  value=${value//$'\n'/\\n}
+  value=${value//$'\r'/\\r}
+  printf '%s' "$value"
+}
+
+upload_one() {
+  local image=$1 response url endpoint curl_config
+  [[ -f "$image" && -r "$image" ]] || die "图片不存在或不可读：$image" 1
+  endpoint="${LSKY_URL%/}/api/v1/upload"
+  curl_config=$(printf 'header = "Authorization: Bearer %s"\nform = "file=@%s"\nurl = "%s"\n' \
+    "$(curl_config_escape "$LSKY_TOKEN")" "$(curl_config_escape "$image")" "$(curl_config_escape "$endpoint")")
+  response=$(printf '%s' "$curl_config" | curl --config - --fail-with-body --silent --show-error --location \
+    --connect-timeout 10 --max-time 120) || die "图片上传失败：$image" 1
+  url=$(jq -er 'if .status == true then (.data.links.url // empty) else empty end' <<<"$response") || die "图床响应缺少成功状态或图片 URL：$image" 1
+  validate_url "$url" "图床返回 URL"
+  printf '%s\n' "$url"
+}
+
+main() {
+  local config_file=${LSKY_UPLOAD_CONFIG:-$DEFAULT_CONFIG}
+  case "${1:-}" in
+    --help|-h) usage; return 0 ;;
+    --version) printf 'lsky-upload %s\n' "$VERSION"; return 0 ;;
+    --config)
+      [[ $# -ge 2 ]] || die "--config 需要配置文件路径" 2
+      config_file=$2
+      shift 2
+      ;;
+  esac
+  (( $# > 0 )) || die "至少需要一个图片路径" 2
+  command -v curl >/dev/null 2>&1 || die "缺少依赖：curl" 2
+  command -v jq >/dev/null 2>&1 || die "缺少依赖：jq" 2
+  read_config "$config_file"
+  local image
+  for image in "$@"; do
+    upload_one "$image"
+  done
+}
+
+main "$@"

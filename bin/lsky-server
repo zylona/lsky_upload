@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+readonly ROOT_DIR
+readonly COMPOSE_FILE="$ROOT_DIR/server/compose.yml"
+readonly CONTAINER_NAME="lsky-upload-local"
+readonly DEFAULT_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/lsky-upload/server/data"
+readonly DEFAULT_PORT=8080
+
+data_dir=${LSKY_SERVER_DATA_DIR:-$DEFAULT_DATA_DIR}
+port=${LSKY_SERVER_PORT:-$DEFAULT_PORT}
+
+die() {
+  printf '%s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+check_inputs() {
+  [[ "$data_dir" == /* ]] || die "LSKY_SERVER_DATA_DIR 必须是绝对路径" 2
+  [[ "$port" =~ ^[0-9]+$ && port -ge 1 && port -le 65535 ]] || die "LSKY_SERVER_PORT 必须是 1-65535 的端口" 2
+  command -v docker >/dev/null 2>&1 || die "缺少依赖：docker" 2
+  docker compose version >/dev/null 2>&1 || die "缺少依赖：docker compose" 2
+  [[ -f "$COMPOSE_FILE" ]] || die "Compose 文件不存在：$COMPOSE_FILE" 2
+}
+
+compose() {
+  LSKY_SERVER_DATA_DIR="$data_dir" LSKY_SERVER_PORT="$port" \
+    docker compose -f "$COMPOSE_FILE" "$@"
+}
+
+validate_compose() {
+  compose config --quiet || die "Compose 配置校验失败" 2
+}
+
+prepare_writable_paths() {
+  docker exec "$CONTAINER_NAME" chown -R 33:33 /var/www/html/database /var/www/html/storage \
+    || die "无法为 Lsky Web 进程准备 SQLite 和存储目录权限" 1
+}
+
+http_url() {
+  printf 'http://127.0.0.1:%s/' "$port"
+}
+
+status() {
+  local container_id
+  container_id=$(compose ps -aq 2>/dev/null || true)
+  if [[ -z "$container_id" ]]; then
+    printf 'stopped\n'
+    return 1
+  fi
+  if ! compose ps --status running -q | grep -q .; then
+    printf 'container-not-running\n'
+    return 1
+  fi
+  if curl --silent --show-error --fail --max-time 5 "$(http_url)" >/dev/null; then
+    printf 'ready: HTTP %s\n' "$(http_url)"
+    return 0
+  fi
+  printf 'running-but-http-unavailable: %s\n' "$(http_url)"
+  return 1
+}
+
+usage() {
+  cat <<'EOF'
+用法：
+  lsky-server start
+  lsky-server stop
+  lsky-server restart
+  lsky-server status
+  lsky-server logs [--tail N]
+  lsky-server config
+  lsky-server purge
+
+环境变量：
+  LSKY_SERVER_DATA_DIR 绝对数据目录（默认 ~/.local/share/lsky-upload/server/data）
+  LSKY_SERVER_PORT      loopback 宿主机端口（默认 8080）
+EOF
+}
+
+main() {
+  local command=${1:-help}
+  shift || true
+  check_inputs
+  case "$command" in
+    start)
+      mkdir -p "$data_dir"
+      validate_compose
+      compose up -d
+      prepare_writable_paths
+      status || die "容器已启动，但 HTTP 探针未就绪；可运行 lsky-server logs 查看日志" 1
+      ;;
+    stop)
+      validate_compose
+      compose stop
+      printf 'stopped; data preserved at %s\n' "$data_dir"
+      ;;
+    restart)
+      validate_compose
+      compose restart
+      prepare_writable_paths
+      status || die "容器已重启，但 HTTP 探针未就绪；可运行 lsky-server logs 查看日志" 1
+      ;;
+    status)
+      status
+      ;;
+    logs)
+      [[ "${1:-}" == --tail && -n "${2:-}" && "$2" =~ ^[0-9]+$ ]] || die 'logs 用法：lsky-server logs --tail N' 2
+      validate_compose
+      compose logs --tail="$2"
+      ;;
+    config)
+      validate_compose
+      compose config
+      ;;
+    purge)
+      [[ "$data_dir" != / && "$data_dir" != "$HOME" ]] || die "拒绝清理过宽的数据目录：$data_dir" 2
+      printf '这将停止服务并删除全部本地服务数据：%s\n输入 PURGE 确认：' "$data_dir" >&2
+      read -r confirmation
+      [[ "$confirmation" == PURGE ]] || die '未确认，未删除任何数据' 2
+      validate_compose
+      compose down
+      rm -rf -- "$data_dir"
+      printf 'purged: %s\n' "$data_dir"
+      ;;
+    help|--help|-h)
+      usage
+      ;;
+    *)
+      usage >&2
+      die "未知命令：$command" 2
+      ;;
+  esac
+}
+
+main "$@"

@@ -1,0 +1,21 @@
+[tools]
+# 当前阶段只需要 ShellCheck；不引入 Python/uv。
+shellcheck = "0.11.0"
+
+[tasks.check-shell]
+description = "检查项目 Bash 脚本语法和 ShellCheck 规则"
+run = [
+  "find bin scripts -type f -print0 | xargs -0 -r -n1 bash -n",
+  "find bin scripts -type f -print0 | xargs -0 -r -n1 shellcheck",
+]
+
+[tasks.compose-config]
+description = "校验本地 Lsky Compose 配置（服务实现后启用）"
+run = "docker compose -f server/compose.yml config --quiet"
+
+[tasks.check]
+description = "运行当前阶段可用的基础检查"
+run = [
+  "mise run check-shell",
+  "git diff --check",
+]
