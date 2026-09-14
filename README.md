@@ -79,6 +79,75 @@ LSKY_ALLOW_INSECURE_HTTP=false
 
 成功时 stdout 只有 URL，每行一个；诊断信息写入 stderr，失败时返回非零退出码。
 
+## 📝 配置 Typora 图片自动上传（Linux）
+
+本项目的主要使用场景是 Typora：在 Typora 中粘贴、拖拽或插入本地图片时，由 Typora 调用 `lsky-upload`，上传成功后自动把本地图片地址替换为 Lsky Pro 图片 URL。
+
+### 前置要求
+
+- 使用支持 **Image Upload / Custom Command** 的 Typora Linux 版本；
+- 已完成本项目安装，并确认命令可执行：
+
+  ```sh
+  command -v lsky-upload
+  lsky-upload --version
+  ```
+
+- 已配置用户私有的 `config.env`，且 `LSKY_URL` 和 `LSKY_TOKEN` 有效；
+- 客户端依赖 `bash`、`curl` 和 `jq` 可用；
+- Typora 运行用户能够访问 Lsky Pro 服务。
+
+### 设置自定义命令
+
+1. 打开 Typora：`File` → `Preferences` → `Image`；
+2. 在 `When Insert...` 中选择 `Upload Image`；
+3. 在 `Image Uploader` 中选择 `Custom Command`；
+4. 填入 `lsky-upload` 的绝对路径，例如：
+
+   ```text
+   /home/你的用户名/.local/bin/lsky-upload
+   ```
+
+   可通过 `command -v lsky-upload` 获取实际路径；
+5. 点击 `Test Uploader` 验证配置。
+
+Typora 会自动把待上传图片路径追加到自定义命令后面。例如配置命令为：
+
+```text
+/home/你的用户名/.local/bin/lsky-upload
+```
+
+Typora 可能实际执行：
+
+```text
+/home/你的用户名/.local/bin/lsky-upload /tmp/image-a.png /tmp/image-b.png
+```
+
+本客户端支持多个图片参数，并按 Typora 传入的顺序逐行输出 URL。不要在自定义命令中再次手写图片路径或 Token。
+
+### 启用自动上传
+
+在 Typora 的 `Image` 设置中启用 `When Insert... → Upload Image`，并建议只勾选 `Apply above rules to local images`。这样通过粘贴、拖拽或 `Format → Image → Insert Local Images...` 插入本地图片时，Typora 会自动调用该命令。
+
+也可以在 Markdown 文件 YAML front matter 中启用自动上传：
+
+```yaml
+---
+typora-copy-images-to: upload
+---
+```
+
+该方式需要先在 Typora 偏好设置中开启 `Allow upload images automatically based on YAML settings`。
+
+### Typora 使用注意事项
+
+- 自定义命令必须是可执行文件的绝对路径；桌面程序的 `PATH` 可能与终端不同，直接填写 `lsky-upload` 可能出现 `command not found`；
+- 命令标准输出只能包含图片 URL，客户端的错误诊断会写入标准错误，这是 Typora 解析上传结果的必要条件；
+- Typora 需要收到以 `http://` 或 `https://` 开头的 URL，Lsky Pro 的站点 URL 应配置为可访问的完整地址；
+- 如果上传失败，先在终端执行同一命令测试，再点击 Typora 的 `Test Uploader` 查看错误；
+- Typora 会将本次传入的图片路径追加到命令末尾，因此不要把 `$1`、`$2` 或固定图片路径写进自定义命令；
+- 详细行为可参考 [Typora 官方图片上传说明](https://support.typora.io/Upload-Image/)。
+
 ## 🐳 本地 Lsky 验收服务
 
 本地服务只用于开发和验收，不是生产部署方案：
