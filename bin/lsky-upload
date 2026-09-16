@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly VERSION="0.1.0"
+readonly VERSION="0.1.1"
 readonly DEFAULT_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/lsky-upload/config.env"
 
 usage() {

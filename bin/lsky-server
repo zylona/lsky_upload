@@ -42,6 +42,18 @@ http_url() {
   printf 'http://127.0.0.1:%s/' "$port"
 }
 
+wait_for_http() {
+  local attempt
+  for attempt in {1..30}; do
+    if curl --silent --show-error --fail --max-time 2 "$(http_url)" >/dev/null 2>&1; then
+      return 0
+    fi
+    (( attempt == 30 )) && return 1
+    sleep 1
+  done
+  return 1
+}
+
 status() {
   local container_id
   container_id=$(compose ps -aq 2>/dev/null || true)
@@ -88,6 +100,7 @@ main() {
       validate_compose
       compose up -d
       prepare_writable_paths
+      wait_for_http || true
       status || die "容器已启动，但 HTTP 探针未就绪；可运行 lsky-server logs 查看日志" 1
       ;;
     stop)
@@ -99,6 +112,7 @@ main() {
       validate_compose
       compose restart
       prepare_writable_paths
+      wait_for_http || true
       status || die "容器已重启，但 HTTP 探针未就绪；可运行 lsky-server logs 查看日志" 1
       ;;
     status)

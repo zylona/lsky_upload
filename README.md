@@ -44,8 +44,8 @@ ${XDG_CONFIG_HOME:-$HOME/.config}/lsky-upload/config.env
 ### 安装 Release
 
 ```sh
-tar -xzf lsky-upload-v0.1.0-linux.tar.gz
-cd lsky-upload-v0.1.0-linux
+tar -xzf lsky-upload-v0.1.1-linux.tar.gz
+cd lsky-upload-v0.1.1-linux
 ./install
 ```
 
@@ -197,7 +197,7 @@ E2E 覆盖真实上传、多图、无效 Token、服务停止和容器重建后�
 
 ```sh
 scripts/build_release.sh
-(cd dist && sha256sum -c lsky-upload-v0.1.0-linux.tar.gz.sha256)
+(cd dist && sha256sum -c lsky-upload-v0.1.1-linux.tar.gz.sha256)
 ```
 
 Release 仅包含客户端、配置模板、安装/卸载脚本、版本信息、许可证和 README，不包含：
@@ -209,8 +209,8 @@ Release 仅包含客户端、配置模板、安装/卸载脚本、版本信息�
 推送匹配 `vMAJOR.MINOR.PATCH` 的 Git tag 后，GitHub Actions 会在门禁通过后自动创建 GitHub Release，并上传 tar.gz 与 `.sha256` 文件：
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 tag 去掉 `v` 后必须与 `VERSION` 完全一致。
